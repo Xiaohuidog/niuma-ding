@@ -1,0 +1,6 @@
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true"><LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingHorizontal="20dp" android:paddingBottom="20dp">
+<TextView style="@style/Caption" android:text="本地记录保留 90 天"/>
+<Spinner android:id="@+id/filter" android:layout_width="match_parent" android:layout_height="48dp" android:contentDescription="记录筛选"/>
+<LinearLayout android:id="@+id/rows" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"/>
+<Button android:id="@+id/more" style="@style/Action" android:text="加载更多"/>
+</LinearLayout></ScrollView>

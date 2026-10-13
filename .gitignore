@@ -1,0 +1,11 @@
+.gradle/
+**/build/
+local.properties
+*.jks
+*.keystore
+.env*
+.DS_Store
+artifacts/
+
+# Local-only documents. Never publish this directory to GitHub.
+docs/

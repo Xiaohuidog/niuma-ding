@@ -1,0 +1,12 @@
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true"><LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingHorizontal="20dp" android:paddingBottom="20dp">
+<LinearLayout android:id="@+id/rulesCard" style="@style/Card"><TextView style="@style/Heading" android:text="执行规则"/><TextView android:id="@+id/rules" style="@style/Body"/><TextView style="@style/Caption" android:text="重试间隔、超时和有效窗口采用交接评审默认值。窗口重叠时串行执行，各自截止时间不延长。"/></LinearLayout>
+<LinearLayout android:id="@+id/checkCard" style="@style/Card">
+    <TextView style="@style/Heading" android:text="运行检查"/>
+    <TextView android:id="@+id/accessibilityStatus" style="@style/CheckDetail"/>
+    <Button android:id="@+id/accessibilitySettings" style="@style/Action" android:text="辅助服务设置"/>
+    <TextView android:id="@+id/captureStatus" style="@style/CheckDetail" android:text="未授权：立即打卡前须授权本机截图"/>
+    <Button android:id="@+id/authorizeCapture" style="@style/Action" android:text="授权截图"/>
+    <TextView android:id="@+id/checkResults" style="@style/CheckDetail"/>
+    <Button android:id="@+id/allowBackground" style="@style/Action" android:text="设置后台不受限"/>
+</LinearLayout>
+</LinearLayout></ScrollView>

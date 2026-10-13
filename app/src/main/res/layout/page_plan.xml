@@ -1,0 +1,15 @@
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true"><LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingHorizontal="20dp" android:paddingBottom="20dp">
+<LinearLayout style="@style/Card" android:background="@drawable/hero">
+<TextView style="@style/Caption" android:text="下次执行 · 北京时间" android:textColor="#CDD9EA"/>
+<TextView android:id="@+id/nextTime" style="@style/Heading" android:text="—" android:textSize="33.6sp" android:fontFamily="monospace" android:textColor="@color/paper"/>
+<Button android:id="@+id/checkinNow" style="@style/Action" android:layout_width="wrap_content" android:layout_gravity="end" android:paddingHorizontal="24dp" android:background="@drawable/immediate_button" android:backgroundTint="@null" android:stateListAnimator="@null" android:textColor="@color/paper" android:text="@string/checkin_now"/>
+</LinearLayout>
+<LinearLayout style="@style/Card">
+<Switch android:id="@+id/inEnabled" android:layout_width="match_parent" android:layout_height="48dp" android:text="上班签到" android:textSize="16sp"/>
+<EditText android:id="@+id/inTime" android:layout_width="match_parent" android:layout_height="64dp" android:inputType="time" android:maxLength="5" android:singleLine="true" android:fontFamily="monospace" android:textSize="30sp" android:hint="07:30" android:contentDescription="上班时间"/>
+<Switch android:id="@+id/outEnabled" android:layout_width="match_parent" android:layout_height="48dp" android:text="下班签到" android:textSize="16sp"/>
+<EditText android:id="@+id/outTime" android:layout_width="match_parent" android:layout_height="64dp" android:inputType="time" android:maxLength="5" android:singleLine="true" android:fontFamily="monospace" android:textSize="30sp" android:hint="17:30" android:contentDescription="下班时间"/>
+<Button android:id="@+id/saveTimes" style="@style/Primary" android:text="保存设置"/>
+<TextView style="@style/Caption" android:text="保存后仅影响未来计划。放假跳过，调休补班执行。"/>
+</LinearLayout>
+</LinearLayout></ScrollView>
