@@ -91,6 +91,15 @@ class Engine(val store: Store, val calendar: WorkCalendar = WorkCalendar.bundled
         s.settings.mailHistoryClearedAt = maxOf(s.settings.mailHistoryClearedAt, now)
     }
 
+    fun clearCheckinHistory(): List<String> = store.transaction { s ->
+        val clearedIds = s.runs.filter { it.status.terminal }.map { it.id }
+        val ids = clearedIds.toSet()
+        s.runs.removeAll { it.id in ids }
+        s.executionEvents.removeAll { it.runId in ids }
+        s.alerts.removeAll { it.runId in ids }
+        clearedIds
+    }
+
     private fun requireReady(s: State, now: Long, deviceReady: Boolean) {
         require(deviceReady) { "自动签到待设备验证，请先完成运行检查" }
         require(calendar.classify(dateAt(now)) != Day.MISSING) { "当前年度工作日历不可用" }

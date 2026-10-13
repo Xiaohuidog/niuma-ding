@@ -45,6 +45,16 @@ class MainActivity : ComponentActivity() {
         }
         binding.reload.setOnClickListener { model.refresh() }
         binding.recheck.setOnClickListener { model.app.runtimeError = null; model.refresh() }
+        binding.clearRecords.setOnClickListener {
+            AlertDialog.Builder(this).setTitle("清空打卡记录")
+                .setMessage("清空所有已结束的打卡记录及关联通知？计划和设置会保留。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("清空") { _, _ -> model.change("打卡记录已清空") {
+                    val ids = model.app.engine.clearCheckinHistory()
+                    val evidenceDir = java.io.File(filesDir, "screenshot-evidence")
+                    ids.forEach { java.io.File(evidenceDir, screenshotEvidenceFileName(it)).delete() }
+                } }.show()
+        }
         model.saved.observe(this) { message ->
             if (message != null) { Toast.makeText(this, message, Toast.LENGTH_SHORT).show(); model.saved.value = null }
         }
@@ -104,6 +114,7 @@ class MainActivity : ComponentActivity() {
         binding.automaticSwitch.visibility = if (model.page == 0) View.VISIBLE else View.GONE
         binding.version.visibility = if (model.page == 0) View.VISIBLE else View.GONE
         binding.recheck.visibility = if (model.page == 3) View.VISIBLE else View.GONE
+        binding.clearRecords.visibility = if (model.page == 1) View.VISIBLE else View.GONE
         showAutomaticState(s)
         binding.automaticSwitch.isEnabled = model.busy.value != true &&
             (s.automaticEnabled || (s.settings.mailVerified && model.app.mail.configured && model.app.automaticConfigured()))
