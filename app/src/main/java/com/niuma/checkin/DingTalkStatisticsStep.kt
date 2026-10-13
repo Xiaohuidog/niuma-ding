@@ -90,7 +90,7 @@ class DingTalkStatisticsStep(
     private fun unknown(ticket: Engine.Ticket, reason: String): Outcome {
         app.engine.completeSubmittedUnknown(ticket, reason, System.currentTimeMillis())
         app.enqueueMail()
-        // A punch may have been submitted. Keep the current page for manual verification.
-        return Outcome(Status.UNKNOWN, detail = reason, returnedToWorkbench = false)
+        val returned = runCatching { navigator.enterWorkbench().reached }.getOrDefault(false)
+        return Outcome(Status.UNKNOWN, detail = reason, returnedToWorkbench = returned)
     }
 }

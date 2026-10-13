@@ -71,7 +71,8 @@ data class State(val settings: Settings = Settings(),
     val automaticEnabled: Boolean get() = !settings.paused && plans.any { it.enabled }
 }
 
-fun Alert.requiresScreenshotAttachment(): Boolean = !runId.isNullOrBlank() && subject.contains("[需核查]")
+fun Alert.requiresScreenshotAttachment(): Boolean = !runId.isNullOrBlank() &&
+    (subject.contains("[需核查]") || subject.contains("[成功]"))
 
 fun screenshotEvidenceFileName(runId: String): String =
     runId.replace(Regex("[^A-Za-z0-9._-]"), "_") + ".png"

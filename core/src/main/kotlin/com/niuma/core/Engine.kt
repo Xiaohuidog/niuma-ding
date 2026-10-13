@@ -21,6 +21,7 @@ class Engine(val store: Store, val calendar: WorkCalendar = WorkCalendar.bundled
         s.plans.forEach { p ->
             val value = if (p.kind == Kind.IN) input else output
             if (p.time != value) {
+                cancelSuperseded(s, p.kind, now)
                 p.time = value
                 if (p.enabled && !s.settings.paused) p.nextDue = future(p, now)
             }
@@ -35,6 +36,7 @@ class Engine(val store: Store, val calendar: WorkCalendar = WorkCalendar.bundled
             val time = if (p.kind == Kind.IN) input else output
             val enabled = if (p.kind == Kind.IN) inputEnabled else outputEnabled
             if (p.time != time || p.enabled != enabled) {
+                if (p.time != time) cancelSuperseded(s, p.kind, now)
                 p.time = time
                 p.enabled = enabled
                 p.nextDue = if (enabled && !s.settings.paused) future(p, now) else null
@@ -147,6 +149,20 @@ class Engine(val store: Store, val calendar: WorkCalendar = WorkCalendar.bundled
                 run.attempts.lastOrNull()?.let { if (it.finished == null) { it.finished = now; it.reason = "用户暂停" } }
                 finish(s, run, RunStatus.CANCELLED, "用户暂停，不再发起新的签到操作", now)
             }
+        }
+    }
+
+    private fun cancelSuperseded(s: State, kind: Kind, now: Long) {
+        s.runs.filter { !it.manual && it.kind == kind && !it.status.terminal &&
+            it.attempts.none { attempt -> attempt.submitted } }.forEach { run ->
+            run.cancelRequested = true
+            run.attempts.lastOrNull()?.let { attempt ->
+                if (attempt.finished == null) {
+                    attempt.finished = now
+                    attempt.reason = "计划时间已修改"
+                }
+            }
+            finish(s, run, RunStatus.CANCELLED, "计划时间已修改", now)
         }
     }
 
@@ -501,7 +517,7 @@ class Engine(val store: Store, val calendar: WorkCalendar = WorkCalendar.bundled
 
     private fun hasBlockingRun(s: State, kind: Kind, scheduleDate: LocalDate, scheduled: Long): Boolean = s.runs.any { run ->
         !run.manual && run.kind == kind && run.date == scheduleDate &&
-            (run.scheduled == scheduled || !run.status.terminal)
+            (run.scheduled == scheduled || (!run.status.terminal && run.deadline > scheduled))
     }
 
     private fun automaticRunId(s: State, kind: Kind, scheduleDate: LocalDate, scheduled: Long): String {

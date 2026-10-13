@@ -16,6 +16,42 @@ data class VisualPunchTarget(val kind: Kind, val point: VisualPoint)
 
 /** Page-specific visual checks. Coordinates come from fresh OCR boxes, never a stored tap position. */
 object PunchVisualPolicy {
+    /** Locate the one large blue punch circle by its color and shape, regardless of its label. */
+    fun singleBlueCircle(width: Int, height: Int, pixel: (Int, Int) -> Int): VisualPoint? {
+        if (width <= 0 || height <= 0) return null
+        val step = (width * 0.025f).roundToInt().coerceAtLeast(8)
+        val radius = (width * 0.11f).roundToInt()
+        val outerRadius = (width * 0.255f).roundToInt()
+        val centers = mutableListOf<VisualPoint>()
+        for (y in (height * 0.32f).roundToInt()..(height * 0.85f).roundToInt() step step) {
+            for (x in (width * 0.2f).roundToInt()..(width * 0.8f).roundToInt() step step) {
+                var blue = 0
+                var outside = 0
+                var valid = true
+                for (index in 0 until 16) {
+                    val angle = index * Math.PI / 8.0
+                    val innerX = x + (radius * cos(angle)).roundToInt()
+                    val innerY = y + (radius * sin(angle)).roundToInt()
+                    val outerX = x + (outerRadius * cos(angle)).roundToInt()
+                    val outerY = y + (outerRadius * sin(angle)).roundToInt()
+                    if (innerX !in 0 until width || innerY !in 0 until height ||
+                        outerX !in 0 until width || outerY !in 0 until height) {
+                        valid = false
+                        break
+                    }
+                    if (isBlue(pixel(innerX, innerY))) blue++
+                    if (!isBlue(pixel(outerX, outerY))) outside++
+                }
+                if (valid && blue >= 14 && outside >= 13) centers += VisualPoint(x, y)
+            }
+        }
+        if (centers.isEmpty()) return null
+        if (centers.maxOf { it.x } - centers.minOf { it.x } > width * 0.2f ||
+            centers.maxOf { it.y } - centers.minOf { it.y } > width * 0.2f) return null
+        return VisualPoint(centers.map { it.x }.average().roundToInt(),
+            centers.map { it.y }.average().roundToInt())
+    }
+
     /** The success dialog itself is a receipt when its shift, date and time all match this attempt. */
     fun successDialogTime(kind: Kind, date: LocalDate, submittedAt: Long, observedAt: Long,
                           height: Int, lines: List<VisualText>): LocalTime? {

@@ -100,8 +100,11 @@ class QqMailTransport(private val context: Context) : MailTransport {
                 setFrom(InternetAddress(account, "牛马签到", "UTF-8"))
                 setRecipient(Message.RecipientType.TO, InternetAddress(recipient, true))
                 setSubject(alert.subject, "UTF-8")
-                val body = alert.body + "\n\n通知编号：" + alert.id
                 val attachment = readScreenshotAttachment(alert)
+                val body = alert.body +
+                    (if (alert.requiresScreenshotAttachment() && attachment == null)
+                        "\n截图：本次未能保存，邮件继续发送。" else "") +
+                    "\n\n通知编号：" + alert.id
                 if (attachment == null) {
                     setText(body, "UTF-8")
                 } else {

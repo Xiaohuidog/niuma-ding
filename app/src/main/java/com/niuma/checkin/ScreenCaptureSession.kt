@@ -86,6 +86,21 @@ class ScreenCaptureSession(private val context: Context) {
         }
     }
 
+    /** Keep the already verified DingTalk screen for the notification email. */
+    fun saveEvidence(runId: String, bitmap: Bitmap): ScreenshotEvidence {
+        val outputDir = File(context.filesDir, "screenshot-evidence").apply { mkdirs() }
+        val output = File(outputDir, screenshotEvidenceFileName(runId))
+        return try {
+            FileOutputStream(output).use { stream ->
+                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)) { "PNG 编码失败" }
+            }
+            ScreenshotEvidence(true, output.absolutePath)
+        } catch (error: Exception) {
+            output.delete()
+            ScreenshotEvidence(false, reason = "截图写入失败：${error.javaClass.simpleName}")
+        }
+    }
+
     private fun releaseLocked() {
         if (stopped && projection == null) return
         stopped = true

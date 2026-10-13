@@ -9,9 +9,11 @@ import com.niuma.core.PunchVisualPolicy
 import com.niuma.core.Result
 import com.niuma.core.StatisticsRecordPolicy
 import com.niuma.core.VisualPoint
+import com.niuma.core.at
 import com.niuma.core.dateAt
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import kotlin.math.roundToInt
 
 /** Step 3 only: wait, inspect the blue punch circle, submit once, then open the result link. */
 class DingTalkPunchStep(
@@ -22,9 +24,11 @@ class DingTalkPunchStep(
     data class Outcome(val status: Status, val detail: String, val returnedToPrimary: Boolean = false)
     data class Prepared(val kind: Kind, val button: VisualPoint)
     data class Preparation(val target: Prepared? = null, val detail: String = "")
+    private data class ResultScreen(val statistics: Boolean, val link: VisualPoint?,
+        val successTime: LocalTime?, val fallbackLink: VisualPoint)
 
-    /** Wait five seconds, then choose only the one blue large circle labeled 上班/下班打卡. */
-    fun prepare(): Preparation {
+    /** Wait five seconds, then find the one large blue circle without reading its label. */
+    fun prepare(scheduledKind: Kind? = null): Preparation {
         check(Looper.myLooper() != Looper.getMainLooper()) { "打卡步骤必须在后台线程执行" }
         app.awaitInitialization()
         if (!navigator.isDingTalkVisible()) return Preparation(detail = "当前不是钉钉打卡页面")
@@ -35,25 +39,29 @@ class DingTalkPunchStep(
             val screenshot = reader.capture()
                 ?: return Preparation(detail = "无法读取大圆形按钮：${reader.lastFailure ?: "截图不可用"}")
             val selected = screenshot.use { screen ->
-                val today = dateAt(System.currentTimeMillis())
-                PunchVisualPolicy.singleBlueButton(today.monthValue, today.dayOfMonth,
-                    screen.bitmap.width, screen.bitmap.height, screen.text, screen.bitmap::getPixel)
+                PunchVisualPolicy.singleBlueCircle(screen.bitmap.width, screen.bitmap.height,
+                    screen.bitmap::getPixel)
             }
-                ?: return Preparation(detail = "无法唯一确认当天上班或下班的蓝色大圆按钮")
-            return Preparation(Prepared(selected.kind, selected.point))
+                ?: return Preparation(detail = "无法定位唯一蓝色大圆按钮")
+            val kind = scheduledKind ?: app.store.transaction { state ->
+                val today = dateAt(System.currentTimeMillis())
+                val now = System.currentTimeMillis()
+                state.plans.minByOrNull { kotlin.math.abs(at(today, it.time) - now) }?.kind
+            } ?: return Preparation(detail = "无法确定当前打卡计划")
+            return Preparation(Prepared(kind, selected))
         }
     }
 
     fun execute(ticket: Engine.Ticket, prepared: Prepared): Outcome {
         check(Looper.myLooper() != Looper.getMainLooper()) { "打卡步骤必须在后台线程执行" }
-        require(ticket.kind == prepared.kind && ticket.date == dateAt(System.currentTimeMillis())) {
-            "已确认的打卡班次或日期与执行任务不一致"
+        require(ticket.date == dateAt(System.currentTimeMillis())) {
+            "打卡日期与执行任务不一致"
         }
         if (!navigator.isDingTalkVisible()) return fail(ticket, "蓝色按钮确认后钉钉页面不可见")
         DingTalkVisualReader(app, navigator).use { reader ->
             val now = System.currentTimeMillis()
             val allowed = app.engine.permitSubmit(ticket, Evidence(Result.NOT_DONE, ticket.date,
-                ticket.kind, "已确认当日对应班次的大圆形按钮为蓝色", allowsSubmit = true), now, true)
+                ticket.kind, "已定位钉钉打卡页面唯一蓝色大圆按钮", allowsSubmit = true), now, true)
             if (!allowed) return fail(ticket, "打卡提交许可未通过")
             if (!navigator.tapDingTalkPoint(prepared.button)) return unknown(ticket, "蓝色按钮点击结果不明")
 
@@ -63,38 +71,50 @@ class DingTalkPunchStep(
             var lastResultTap = 0L
             var modalTime: LocalTime? = null
             var modalSeenAt = 0L
+            var lastFallbackLink: VisualPoint? = null
+            var screenshotSaved = false
+            val submittedAtElapsed = SystemClock.elapsedRealtime()
             while (SystemClock.elapsedRealtime() < deadline) {
                 Thread.sleep(700)
                 val modal = reader.capture(allowSystemOverlay = true) ?: continue
                 readableScreens++
-                val (statisticsConfirmed, link, verifiedTime) = modal.use { screen ->
+                val scan = modal.use { screen ->
                     val statistics = StatisticsRecordPolicy(ticket.date, ticket.kind)
-                    Triple(statistics.acceptHeader(screen.text, screen.bitmap.height),
+                    val result = ResultScreen(statistics.acceptHeader(screen.text, screen.bitmap.height),
                         PunchVisualPolicy.resultLink(ticket.kind, screen.bitmap.width, screen.bitmap.height, screen.text),
                         PunchVisualPolicy.successDialogTime(ticket.kind, ticket.date, now,
-                            System.currentTimeMillis(), screen.bitmap.height, screen.text))
+                            System.currentTimeMillis(), screen.bitmap.height, screen.text),
+                        VisualPoint(screen.bitmap.width / 2, (screen.bitmap.height * 0.80f).roundToInt()))
+                    if (result.successTime != null && !screenshotSaved)
+                        screenshotSaved = app.screenCapture.saveEvidence(ticket.runId, screen.bitmap).ready
+                    result
                 }
-                if (verifiedTime != null) {
-                    modalTime = verifiedTime
+                lastFallbackLink = scan.fallbackLink
+                if (scan.successTime != null) {
+                    modalTime = scan.successTime
                     if (modalSeenAt == 0L) modalSeenAt = SystemClock.elapsedRealtime()
                 }
-                if (statisticsConfirmed && resultTaps > 0) {
+                if (scan.statistics) {
                     return Outcome(Status.STATISTICS_REACHED,
                         "已从成功弹窗的“查看打卡结果”进入今日统计页；打卡记录待下一步核验")
                 }
+                if (modalTime != null && scan.successTime == null && resultTaps > 0)
+                    return successFromModal(ticket, modalTime!!, null)
                 val nowAfterCapture = SystemClock.elapsedRealtime()
-                if (resultTaps < 5 && nowAfterCapture - lastResultTap >= 2_500) {
-                    val tapped = if (link != null) navigator.tapVerifiedResultPoint(link)
-                        else navigator.tapVisibleResultLink(ticket.kind)
+                if (resultTaps < 8 && nowAfterCapture - submittedAtElapsed >= 2_500 &&
+                    nowAfterCapture - lastResultTap >= 2_500) {
+                    val point = if (resultTaps < 2) scan.link ?: scan.fallbackLink else scan.fallbackLink
+                    val tapped = navigator.tapVerifiedResultPoint(point) ||
+                        navigator.tapVisibleResultLink(ticket.kind)
                     if (tapped) {
                         resultTaps++
                         lastResultTap = nowAfterCapture
                     }
                 }
-                if (modalTime != null && nowAfterCapture - modalSeenAt >= 12_000L)
-                    return successFromModal(ticket, modalTime!!)
+                if (modalTime != null && nowAfterCapture - modalSeenAt >= 18_000L)
+                    return successFromModal(ticket, modalTime!!, scan.fallbackLink)
             }
-            if (modalTime != null) return successFromModal(ticket, modalTime!!)
+            if (modalTime != null) return successFromModal(ticket, modalTime!!, lastFallbackLink)
             val reason = if (readableScreens == 0) "点击蓝色按钮后无法读取成功弹窗：${reader.lastFailure ?: "截图不可用"}"
                 else if (resultTaps == 0) "点击蓝色按钮后未能定位成功弹窗底部的“查看打卡结果”入口"
                 else "已点击成功弹窗底部的“查看打卡结果”${resultTaps}次，但未确认进入今日统计页"
@@ -102,7 +122,11 @@ class DingTalkPunchStep(
         }
     }
 
-    private fun successFromModal(ticket: Engine.Ticket, time: LocalTime): Outcome {
+    private fun successFromModal(ticket: Engine.Ticket, time: LocalTime, visibleLink: VisualPoint?): Outcome {
+        if (visibleLink != null) {
+            navigator.tapVerifiedResultPoint(visibleLink)
+            Thread.sleep(900)
+        }
         val stamp = "${ticket.date} ${time.format(DateTimeFormatter.ofPattern("HH:mm"))}"
         val detail = "打卡时间：$stamp（北京时间）；依据：钉钉${ticket.kind.label}打卡成功弹窗"
         app.engine.complete(ticket, Evidence(Result.COMPLETE, ticket.date, ticket.kind, detail),
@@ -123,7 +147,8 @@ class DingTalkPunchStep(
     private fun unknown(ticket: Engine.Ticket, reason: String): Outcome {
         app.engine.completeSubmittedUnknown(ticket, reason, System.currentTimeMillis())
         app.enqueueMail()
-        return Outcome(Status.UNKNOWN, reason)
+        val returned = runCatching { navigator.enterWorkbench().reached }.getOrDefault(false)
+        return Outcome(Status.UNKNOWN, reason, returned)
     }
 
 }

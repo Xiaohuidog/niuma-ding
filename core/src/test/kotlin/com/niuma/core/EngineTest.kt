@@ -51,7 +51,7 @@ class EngineTest {
         val success = unknown.copy(subject = "[牛马签到][成功] 2026-09-20 下班签到成功")
 
         assertTrue(unknown.requiresScreenshotAttachment())
-        assertFalse(success.requiresScreenshotAttachment())
+        assertTrue(success.requiresScreenshotAttachment())
         assertEquals("2026-09-20_OUT.png", screenshotEvidenceFileName("2026-09-20:OUT"))
     }
 
