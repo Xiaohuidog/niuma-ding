@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">牛马钉钉</string>
+    <string name="app_name">牛马签到</string>
     <string name="plan">计划</string><string name="records">记录</string><string name="mail">通知</string><string name="settings">设置</string>
     <string name="loading">正在读取本地数据…</string>
     <string name="automatic_checkin">自动签到总开关</string>

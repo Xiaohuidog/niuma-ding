@@ -256,7 +256,7 @@ class MainActivity : ComponentActivity() {
         val p = model.app.engine.policy
         b.rules.text = "立即打卡与定时计划共用四步流程。定时运行会唤亮屏幕，但需要关闭密码、指纹和图案锁，并保持截图会话有效及 Wi-Fi 可用；条件失效会记录失败并通知。\n历史执行记录保留 ${p.retentionDays} 天。"
         val batteryExempt = model.app.backgroundAllowed()
-        b.batteryOptimizationStatus.text = if (batteryExempt) "已关闭" else "未关闭"
+        b.batteryOptimizationStatus.text = if (batteryExempt) "已关闭：关闭电池优化" else "未关闭：关闭电池优化"
         b.allowBackground.setOnClickListener {
             if (model.app.backgroundAllowed())
                 openSettings(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
