@@ -3,10 +3,11 @@
 <LinearLayout android:id="@+id/checkCard" style="@style/Card">
     <TextView style="@style/Heading" android:text="运行检查"/>
     <TextView android:id="@+id/accessibilityStatus" style="@style/CheckDetail"/>
-    <Button android:id="@+id/accessibilitySettings" style="@style/Action" android:text="辅助服务设置"/>
+    <Button android:id="@+id/accessibilitySettings" style="@style/Action" android:layout_marginBottom="16dp" android:text="辅助服务设置"/>
     <TextView android:id="@+id/captureStatus" style="@style/CheckDetail" android:text="未授权：立即打卡前须授权本机截图"/>
-    <Button android:id="@+id/authorizeCapture" style="@style/Action" android:text="授权截图"/>
+    <Button android:id="@+id/authorizeCapture" style="@style/Action" android:layout_marginBottom="16dp" android:text="获取截图权限"/>
+    <TextView android:id="@+id/batteryOptimizationStatus" style="@style/CheckDetail"/>
+    <Button android:id="@+id/allowBackground" style="@style/Action" android:layout_marginBottom="16dp" android:text="关闭电池优化"/>
     <TextView android:id="@+id/checkResults" style="@style/CheckDetail"/>
-    <Button android:id="@+id/allowBackground" style="@style/Action" android:text="设置后台不受限"/>
 </LinearLayout>
 </LinearLayout></ScrollView>

@@ -18,7 +18,7 @@
 ./gradlew :core:test :app:assembleDebug :app:lintDebug
 ```
 
-Debug APK 路径：`app/build/outputs/apk/debug/niuma-ding-debug-v0.0.2-2.apk`。
+Debug APK 路径：`app/build/outputs/apk/debug/niuma-ding-debug-v0.0.3-3.apk`。
 
 ## 本地文件
 
