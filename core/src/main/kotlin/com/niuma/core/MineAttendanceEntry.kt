@@ -2,20 +2,19 @@ package com.niuma.core
 
 data class EntryLabel(val text: String, val centerX: Float, val centerY: Float)
 
-/** Picks only the attendance item bounded by the Workbench's 我的 and 全员 sections. */
+/** Picks attendance only from 工作台 → 个人 → 最近使用. */
 object MineAttendanceEntry {
     fun targetIndex(labels: List<EntryLabel>, visualOcr: Boolean = false): Int? {
-        val mine = labels.withIndex().filter { it.value.text == "我的" }
-        if (mine.size != 1) return null
-        val allStaff = labels.withIndex().filter { it.value.text == "全员" &&
-            it.value.centerY > mine.single().value.centerY }
-        if (allStaff.size != 1) return null
-        val top = mine.single().value.centerY
-        val bottom = allStaff.single().value.centerY
+        val personal = labels.singleOrNull { it.text == "个人" && it.centerY < 0.25f } ?: return null
+        val recent = labels.singleOrNull { it.text == "最近使用" &&
+            it.centerY > personal.centerY && it.centerY < 0.35f } ?: return null
+        val top = recent.centerY
+        val bottom = labels.filter { it.text == "高德打车" && it.centerY > top }
+            .minOfOrNull { it.centerY } ?: 0.39f
         val targetNames = if (visualOcr) setOf("考勤打卡", "考勒打卡") else setOf("考勤打卡")
         val targets = labels.withIndex().filter { it.value.text in targetNames &&
             it.value.centerY > top && it.value.centerY < bottom &&
-            (!visualOcr || it.value.centerX < 0.25f) }
+            it.value.centerX < 0.30f }
         val first = targets.firstOrNull() ?: return null
         return first.index.takeIf { targets.all { target ->
             kotlin.math.abs(target.value.centerX - first.value.centerX) < 0.03f &&

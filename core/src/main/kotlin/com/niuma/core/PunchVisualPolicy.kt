@@ -16,6 +16,26 @@ data class VisualPunchTarget(val kind: Kind, val point: VisualPoint)
 
 /** Page-specific visual checks. Coordinates come from fresh OCR boxes, never a stored tap position. */
 object PunchVisualPolicy {
+    /** Read the popup only to confirm that a punch succeeded; the schedule determines its type. */
+    fun hasSuccessDialog(height: Int, lines: List<VisualText>): Boolean {
+        if (height <= 0) return false
+        val text = lines.sortedWith(compareBy<VisualText> { it.box.centerY }.thenBy { it.box.left })
+            .joinToString("") { it.text }.replace(Regex("\\s+"), "")
+        return text.contains("打卡成功")
+    }
+
+    /** A freshly opened success dialog is enough to identify the actual punch type. */
+    fun successDialogKind(height: Int, lines: List<VisualText>): Kind? {
+        val rows = lines.groupBy { (it.box.centerY / (height * 0.018f).coerceAtLeast(1f)).toInt() }
+            .values.map { row -> row.sortedBy { it.box.left }.joinToString("") { it.text }
+                .replace(Regex("\\s+"), "") }
+        val combined = lines.sortedWith(compareBy<VisualText> { it.box.centerY }.thenBy { it.box.left })
+            .joinToString("") { it.text }.replace(Regex("\\s+"), "")
+        return Kind.entries.filter { kind ->
+            rows.any { it.contains("${kind.label}打卡成功") } || combined.contains("${kind.label}打卡成功")
+        }.singleOrNull()
+    }
+
     /** Locate the one large blue punch circle by its color and shape, regardless of its label. */
     fun singleBlueCircle(width: Int, height: Int, pixel: (Int, Int) -> Int): VisualPoint? {
         if (width <= 0 || height <= 0) return null

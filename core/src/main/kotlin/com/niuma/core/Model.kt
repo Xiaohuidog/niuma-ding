@@ -35,7 +35,7 @@ data class Policy(val maxAttempts: Int = 3, val retryMs: Long = 120_000,
 data class Plan(val kind: Kind, var time: String, var enabled: Boolean = false, var nextDue: Long? = null)
 data class Attempt(val number: Int, val started: Long, var finished: Long? = null,
                    var submitted: Boolean = false, var reason: String = "核验已有结果")
-data class Run(val id: String, val kind: Kind, val scheduled: Long, val deadline: Long,
+data class Run(val id: String, var kind: Kind, val scheduled: Long, val deadline: Long,
                var status: RunStatus = RunStatus.PENDING, var nextAttempt: Long? = null,
                var finished: Long? = null, var reason: String = "", var cancelRequested: Boolean = false,
                val attempts: MutableList<Attempt> = mutableListOf(), val manual: Boolean = false,
@@ -72,7 +72,7 @@ data class State(val settings: Settings = Settings(),
 }
 
 fun Alert.requiresScreenshotAttachment(): Boolean = !runId.isNullOrBlank() &&
-    (subject.contains("[需核查]") || subject.contains("[成功]"))
+    (subject.contains("[需核查]") || subject.contains("[成功]") || subject.contains("[需处理]"))
 
 fun screenshotEvidenceFileName(runId: String): String =
     runId.replace(Regex("[^A-Za-z0-9._-]"), "_") + ".png"

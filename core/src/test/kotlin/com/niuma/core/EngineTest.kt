@@ -72,7 +72,7 @@ class EngineTest {
     private val due = at(day, "07:20")
     private val state get() = store.state
     private val run get() = state.runs.first()
-    private fun ready(now: Long = due - 60_000) {
+    private fun ready(now: Long = at(day, "00:00")) {
         engine.configureMail("me@example.com", "test-only-ref")
         engine.acceptMailTest("me@example.com", "test-only-ref")
         engine.setEnabled(Kind.IN, true, now, true)
@@ -132,7 +132,7 @@ class EngineTest {
         val migratedDue = isolated.state.plans.first { it.kind == Kind.IN }.nextDue
         isolatedEngine.upgradeRandomSchedule(at(day, "00:01"))
 
-        assertEquals(1, isolated.state.settings.scheduleVersion)
+        assertEquals(3, isolated.state.settings.scheduleVersion)
         assertTrue(migratedDue!! >= at(day, "07:20") && migratedDue < at(day, "07:30"))
         assertEquals(migratedDue, isolated.state.plans.first { it.kind == Kind.IN }.nextDue)
     }

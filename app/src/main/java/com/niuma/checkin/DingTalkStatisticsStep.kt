@@ -88,6 +88,7 @@ class DingTalkStatisticsStep(
     }
 
     private fun unknown(ticket: Engine.Ticket, reason: String): Outcome {
+        app.captureDingTalkFailure(ticket.runId, navigator)
         app.engine.completeSubmittedUnknown(ticket, reason, System.currentTimeMillis())
         app.enqueueMail()
         val returned = runCatching { navigator.enterWorkbench().reached }.getOrDefault(false)

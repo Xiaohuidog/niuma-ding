@@ -67,6 +67,10 @@ class CheckinApp : Application() {
         else -> null
     }
     fun online(): Boolean = DeviceNetwork.isValidatedWifi(this)
+    fun captureDingTalkFailure(runId: String, navigator: DingTalkWorkbenchNavigator) {
+        if (navigator.isDingTalkVisible() || navigator.isSystemOverlayVisible())
+            screenCapture.capture(runId)
+    }
     fun exactAllowed() = Build.VERSION.SDK_INT < 31 || getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
     data class Check(val label: String, val passed: Boolean, val detail: String)
     fun checks(): List<Check> {

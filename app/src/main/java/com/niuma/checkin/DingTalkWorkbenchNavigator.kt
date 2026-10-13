@@ -3,6 +3,7 @@ package com.niuma.checkin
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.Handler
@@ -86,15 +87,27 @@ class DingTalkWorkbenchNavigator : AccessibilityService() {
             nodes.map { WorkbenchLabel(it.label, it.centerY, it.selected) })
         if (WorkbenchStep.decide(page, 0) != WorkbenchAction.DONE)
             return Outcome(false, "当前不是已确认的工作台页面")
+        if (nodes.none { it.label == "最近使用" }) {
+            nodes.firstOrNull { it.label == "个人" && it.centerY < 0.25f }?.let {
+                click(it.node)
+                Thread.sleep(500)
+                nodes.clear()
+                val refreshed = waitForDingTalkRoot() ?: return Outcome(false, "切换个人工作台后无法读取页面")
+                collect(refreshed, screen, nodes)
+            }
+        }
         val index = MineAttendanceEntry.targetIndex(nodes.map {
             EntryLabel(it.label, it.centerX, it.centerY)
         })
         if (index != null) {
-            if (!tap(nodes[index].node)) return Outcome(false, "“我的”中的“考勤打卡”无法点击")
+            if (!tap(nodes[index].node)) return Outcome(false, "“最近使用”中的“考勤打卡”无法点击")
         } else {
             // DingTalk renders the Workbench application cards without accessibility text on some devices.
-            // The Workbench shell can appear before its app cards. Re-read this same section
-            // while it loads; never substitute the duplicate entry under 全员.
+            // The Workbench shell can appear before its app cards. Re-read 最近使用
+            // while it loads; never substitute an entry elsewhere on the page.
+            var readableScreens = 0
+            var captureFailure: String? = null
+            var personalTapped = false
             val point = DingTalkVisualReader(application as CheckinApp, this).use { reader ->
                 var targetPoint: VisualPoint? = null
                 repeat(8) {
@@ -102,28 +115,66 @@ class DingTalkWorkbenchNavigator : AccessibilityService() {
                         Thread.sleep(600)
                         return@repeat
                     }
-                    targetPoint = reader.capture()?.use { shot ->
+                    val shot = reader.capture()
+                    if (shot == null) captureFailure = reader.lastFailure
+                    else readableScreens++
+                    var personalPoint: VisualPoint? = null
+                    targetPoint = shot?.use {
                         val labels = shot.text.map { line ->
                             EntryLabel(line.text.replace(Regex("\\s+"), ""),
                                 line.box.centerX.toFloat() / shot.bitmap.width,
                                 line.box.centerY.toFloat() / shot.bitmap.height)
                         }
+                        personalPoint = shot.text.firstOrNull { it.text.replace(Regex("\\s+"), "") == "个人" &&
+                            it.box.centerY < shot.bitmap.height * 0.25f }
+                            ?.let { VisualPoint(it.box.centerX, it.box.centerY) }
                         val target = MineAttendanceEntry.targetIndex(labels, visualOcr = true)
                         target?.let { VisualPoint(shot.text[it].box.centerX, shot.text[it].box.centerY) }
+                            ?: mineAttendanceIcon(shot.bitmap, labels)
                     }
                     if (targetPoint != null) return@use targetPoint
+                    if (!personalTapped && personalPoint != null && tapDingTalkPoint(personalPoint!!))
+                        personalTapped = true
                     Thread.sleep(600)
                 }
                 targetPoint
-            } ?: return Outcome(false, "工作台内容重读 8 次后仍无法唯一定位“我的”中的“考勤打卡”")
-            if (!tapDingTalkPoint(point)) return Outcome(false, "截图定位的“我的”考勤入口无法点击")
+            } ?: return Outcome(false, if (readableScreens == 0)
+                "无法读取钉钉工作台截图：${captureFailure ?: "截图不可用"}"
+                else "工作台内容重读 8 次后仍未定位“个人→最近使用”中的“考勤打卡”")
+            if (!tapDingTalkPoint(point)) return Outcome(false, "截图定位的“最近使用”考勤入口无法点击")
         }
-        return Outcome(true, "已点击“我的”中的“考勤打卡”；目标页面待下一步核验")
+        return Outcome(true, "已点击“个人→最近使用”中的“考勤打卡”；目标页面待下一步核验")
     }
 
     fun isDingTalkVisible(): Boolean = rootInActiveWindow?.packageName?.toString() == DINGTALK_PACKAGE
 
     fun isSystemOverlayVisible(): Boolean = rootInActiveWindow?.packageName?.toString() == "com.android.systemui"
+
+    /** Blue attendance icon in the first 最近使用 card, confirmed by its section label. */
+    private fun mineAttendanceIcon(bitmap: Bitmap, labels: List<EntryLabel>): VisualPoint? {
+        val width = bitmap.width
+        val height = bitmap.height
+        val recent = labels.singleOrNull { it.text == "最近使用" && it.centerY in 0.16f..0.25f }
+            ?: return null
+        if (labels.none { it.text == "个人" && it.centerY < recent.centerY }) return null
+        var count = 0
+        var sumX = 0L
+        var sumY = 0L
+        for (y in (height * 0.23f).toInt() until (height * 0.31f).toInt() step 4) {
+            for (x in (width * 0.07f).toInt() until (width * 0.21f).toInt() step 4) {
+                val color = bitmap.getPixel(x, y)
+                val red = android.graphics.Color.red(color)
+                val green = android.graphics.Color.green(color)
+                val blue = android.graphics.Color.blue(color)
+                if (blue > 170 && blue > red + 60 && blue > green + 35) {
+                    count++
+                    sumX += x
+                    sumY += y
+                }
+            }
+        }
+        return if (count >= 30) VisualPoint((sumX / count).toInt(), (sumY / count).toInt()) else null
+    }
 
     /** Result-link coordinates are accepted only after the current screenshot identifies the success dialog. */
     fun tapVerifiedResultPoint(point: VisualPoint): Boolean {

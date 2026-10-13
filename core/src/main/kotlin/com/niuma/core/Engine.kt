@@ -35,8 +35,16 @@ class Engine(val store: Store, val calendar: WorkCalendar = WorkCalendar.bundled
         s.plans.forEach { p ->
             val time = if (p.kind == Kind.IN) input else output
             val enabled = if (p.kind == Kind.IN) inputEnabled else outputEnabled
-            if (p.time != time || p.enabled != enabled) {
-                if (p.time != time) cancelSuperseded(s, p.kind, now)
+            val boundary = at(dateAt(now), time)
+            val nearStart = p.kind == Kind.IN && enabled && !s.settings.paused &&
+                now >= boundary - AUTOMATIC_WINDOW_MS && now < boundary
+            val alreadySubmitted = s.runs.any { run ->
+                !run.manual && run.kind == p.kind && run.date == dateAt(now) &&
+                    run.attempts.any { it.submitted }
+            }
+            val rescheduleAtStart = nearStart && !alreadySubmitted && p.nextDue != boundary
+            if (p.time != time || p.enabled != enabled || rescheduleAtStart) {
+                if (p.time != time || rescheduleAtStart) cancelSuperseded(s, p.kind, now)
                 p.time = time
                 p.enabled = enabled
                 p.nextDue = if (enabled && !s.settings.paused) future(p, now) else null
@@ -111,7 +119,8 @@ class Engine(val store: Store, val calendar: WorkCalendar = WorkCalendar.bundled
 
     private fun automaticWindow(plan: Plan, date: LocalDate): AutomaticWindow {
         val boundary = at(date, plan.time)
-        return if (plan.kind == Kind.IN) AutomaticWindow(date, boundary - AUTOMATIC_WINDOW_MS, boundary)
+        return if (plan.kind == Kind.IN)
+            AutomaticWindow(date, boundary - AUTOMATIC_WINDOW_MS, boundary + AUTOMATIC_WINDOW_MS)
         else AutomaticWindow(date, boundary, boundary + AUTOMATIC_WINDOW_MS)
     }
 
@@ -134,7 +143,10 @@ class Engine(val store: Store, val calendar: WorkCalendar = WorkCalendar.bundled
     private fun future(plan: Plan, now: Long): Long {
         var date = dateAt(now).minusDays(1)
         repeat(4) {
-            val due = randomizedDue(plan, date)
+            val boundary = at(date, plan.time)
+            val due = if (plan.kind == Kind.IN && date == dateAt(now) &&
+                now >= boundary - AUTOMATIC_WINDOW_MS && now < boundary) boundary
+            else randomizedDue(plan, date)
             if (due > now) return due
             date = date.plusDays(1)
         }
@@ -188,7 +200,10 @@ class Engine(val store: Store, val calendar: WorkCalendar = WorkCalendar.bundled
                 val scheduleDate = scheduleDate(p, due)
                 if (!hasBlockingRun(s, p.kind, scheduleDate, due)) {
                     val id = automaticRunId(s, p.kind, scheduleDate, due)
-                    val r = Run(id, p.kind, due, automaticWindow(p, scheduleDate).end,
+                    val boundary = at(scheduleDate, p.time)
+                    val deadline = if (p.kind == Kind.IN && due < boundary) boundary
+                        else boundary + AUTOMATIC_WINDOW_MS
+                    val r = Run(id, p.kind, due, deadline,
                         scheduleDate = scheduleDate)
                     s.runs.add(r)
                     when {
@@ -341,6 +356,16 @@ class Engine(val store: Store, val calendar: WorkCalendar = WorkCalendar.bundled
         true
     }
 
+    /** Manual punch type follows the DingTalk receipt, even when the nearest plan differs. */
+    fun acceptReceiptKind(ticket: Ticket, receiptKind: Kind): Ticket? = store.transaction { s ->
+        val run = active(s, ticket) ?: return@transaction null
+        if (run.kind != receiptKind) {
+            if (!run.manual || run.attempts.lastOrNull()?.submitted != true) return@transaction null
+            run.kind = receiptKind
+        }
+        ticket.copy(kind = receiptKind)
+    }
+
     fun complete(ticket: Ticket, evidence: Evidence, now: Long) = store.transaction { s ->
         val r = active(s, ticket) ?: return@transaction
         endAttempt(s, r, evidence, now)
@@ -407,12 +432,13 @@ class Engine(val store: Store, val calendar: WorkCalendar = WorkCalendar.bundled
             val guidance = when (status) {
                 RunStatus.SUCCESS -> "本次签到已完成。"
                 RunStatus.UNKNOWN -> "程序未能核验结果，不代表打卡失败。\n请只读核查钉钉打卡记录，不要重复提交。"
-                else -> "截图不可用\n请按企业允许的方式核查和处理。"
+                else -> "如邮件有附件，请查看打卡失败时钉钉的最后画面。\n请按企业允许的方式核查和处理。"
             }
             s.alerts.add(Alert("run:${r.id}", r.id, now, now + MAIL_EXPIRY_MS,
                 "[牛马签到][$action] ${r.date} ${r.kind.label}签到${status.label}",
                 "计划时间：${stamp(r.scheduled)}（北京时间）\n结束时间：${stamp(now)}\n尝试次数：${r.attempts.size}\n结果：${status.label}\n原因：$reason\n$guidance",
-                nextAttempt = if (status == RunStatus.UNKNOWN && r.attempts.any { it.submitted }) now + UNKNOWN_VERIFICATION_GRACE_MS else now))
+                nextAttempt = if (status == RunStatus.UNKNOWN && !r.manual && r.attempts.any { it.submitted })
+                    now + UNKNOWN_VERIFICATION_GRACE_MS else now))
         }
     }
 
@@ -526,7 +552,7 @@ class Engine(val store: Store, val calendar: WorkCalendar = WorkCalendar.bundled
     }
 
     companion object {
-        const val RANDOM_SCHEDULE_VERSION = 1
+        const val RANDOM_SCHEDULE_VERSION = 3
         const val MAIL_MAX_ATTEMPTS = 3
         const val MAIL_EXPIRY_MS = 24L * 60 * 60 * 1000
     }

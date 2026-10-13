@@ -46,7 +46,7 @@ class DingTalkCheckinFlow(private val app: CheckinApp) {
             val punch = punchStep.execute(currentTicket, target)
             when (punch.status) {
                     DingTalkPunchStep.Status.SUCCESS_MODAL_VERIFIED ->
-                        Outcome(true, punch.detail, punch.returnedToPrimary, target.kind)
+                        Outcome(true, punch.detail, punch.returnedToPrimary, punch.kind ?: target.kind)
                     DingTalkPunchStep.Status.FAILED -> Outcome(false, punch.detail, punch.returnedToPrimary, target.kind)
                     DingTalkPunchStep.Status.UNKNOWN -> {
                         Outcome(false, "结果待核查：${punch.detail}", punch.returnedToPrimary, target.kind)
@@ -70,6 +70,7 @@ class DingTalkCheckinFlow(private val app: CheckinApp) {
                 state.runs.firstOrNull { it.id == currentTicket.runId }?.attempts?.lastOrNull()?.submitted == true
             }
             val reason = "签到流程中断：${error.message ?: error.javaClass.simpleName}"
+            app.captureDingTalkFailure(currentTicket.runId, navigator)
             if (submitted) app.engine.completeSubmittedUnknown(currentTicket, reason, System.currentTimeMillis())
             else app.engine.complete(currentTicket, Evidence(Result.FAILURE, summary = reason), System.currentTimeMillis())
             app.enqueueMail()
@@ -80,6 +81,7 @@ class DingTalkCheckinFlow(private val app: CheckinApp) {
 
     private fun failBeforeSubmit(navigator: DingTalkWorkbenchNavigator, reason: String,
                                  ticket: Engine.Ticket? = null): Outcome {
+        ticket?.let { app.captureDingTalkFailure(it.runId, navigator) }
         if (ticket == null) app.engine.recordManualFailure(System.currentTimeMillis(), reason)
         else app.engine.complete(ticket, Evidence(Result.FAILURE, summary = reason), System.currentTimeMillis())
         app.enqueueMail()
