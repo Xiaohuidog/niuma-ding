@@ -46,6 +46,8 @@ class DingTalkCheckinFlow(private val app: CheckinApp) {
             val currentTicket = requireNotNull(ticket)
             val punch = punchStep.execute(currentTicket, target)
             when (punch.status) {
+                    DingTalkPunchStep.Status.SUCCESS_MODAL_VERIFIED ->
+                        Outcome(true, punch.detail, punch.returnedToPrimary, target.kind)
                     DingTalkPunchStep.Status.FAILED -> Outcome(false, punch.detail, punch.returnedToPrimary, target.kind)
                     DingTalkPunchStep.Status.UNKNOWN -> {
                         // A submit may already have succeeded. Keep the modal in place for read-only review.

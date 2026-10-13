@@ -1,5 +1,7 @@
 package com.niuma.core
 
+import java.time.LocalDate
+import java.time.LocalTime
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -14,6 +16,35 @@ data class VisualPunchTarget(val kind: Kind, val point: VisualPoint)
 
 /** Page-specific visual checks. Coordinates come from fresh OCR boxes, never a stored tap position. */
 object PunchVisualPolicy {
+    /** The success dialog itself is a receipt when its shift, date and time all match this attempt. */
+    fun successDialogTime(kind: Kind, date: LocalDate, submittedAt: Long, observedAt: Long,
+                          height: Int, lines: List<VisualText>): LocalTime? {
+        if (height <= 0) return null
+        val rows = lines.sortedWith(compareBy<VisualText> { it.box.centerY }.thenBy { it.box.left })
+            .fold(mutableListOf<MutableList<VisualText>>()) { grouped, line ->
+                val row = grouped.lastOrNull()
+                if (row != null && kotlin.math.abs(row.first().box.centerY - line.box.centerY) <= height * 0.018f)
+                    row += line else grouped += mutableListOf(line)
+                grouped
+            }.map { row ->
+                val text = row.sortedBy { it.box.left }.joinToString("") { it.text }
+                    .replace(Regex("\\s+"), "").replace('：', ':')
+                VisualText(text, VisualBox(row.minOf { it.box.left }, row.minOf { it.box.top },
+                    row.maxOf { it.box.right }, row.maxOf { it.box.bottom }))
+            }
+        val title = rows.singleOrNull { it.text.contains("${kind.label}打卡成功") &&
+            it.box.centerY in (height * 0.55f).toInt()..(height * 0.82f).toInt() } ?: return null
+        val datePattern = "${date.year}[-/年]0?${date.monthValue}[-/月]0?${date.dayOfMonth}日?"
+        val timePattern = Regex("(?:打卡时间:?)?$datePattern((?:[01]\\d|2[0-3]):[0-5]\\d)")
+        val candidates = rows.filter { it.box.centerY > title.box.centerY &&
+            it.box.centerY < height * 0.92f }.mapNotNull { row ->
+            timePattern.find(row.text)?.groupValues?.get(1)?.let { runCatching { LocalTime.parse(it) }.getOrNull() }
+        }.distinct()
+        val time = candidates.singleOrNull() ?: return null
+        val minute = at(date, time.toString())
+        return time.takeIf { minute + 60_000L > submittedAt && minute <= observedAt + 60_000L }
+    }
+
     fun singleBlueButton(month: Int, day: Int, width: Int, height: Int,
                          lines: List<VisualText>, pixel: (Int, Int) -> Int): VisualPunchTarget? =
         Kind.entries.mapNotNull { kind ->

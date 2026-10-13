@@ -347,11 +347,18 @@ class EngineTest {
         assertEquals(ExecutionEventResult.FAILED, state.executionEvents[1].result)
         assertEquals("普通锁屏未能解除", state.executionEvents[1].reason)
     }
-    @Test fun eventsAndTimeEditsDoNotDuplicateInstances() {
+    @Test fun changingTimeAfterSuccessCreatesOneNewScheduledRun() {
         val t = start(); engine.complete(t, complete(t), due + 1)
+        engine.tick(due + 2, true)
+        assertEquals(1, state.runs.size)
         engine.saveTimes("07:35", "18:30", due + 2)
         engine.tick(due + 300_000, true); engine.tick(due + 300_000, true)
-        assertEquals(1, state.runs.size); assertEquals(due, run.scheduled)
+        assertEquals(2, state.runs.size)
+        assertEquals(due, run.scheduled)
+        val rescheduled = state.runs.single { it.scheduled == due + 300_000 }
+        assertEquals(RunStatus.PENDING, rescheduled.status)
+        assertEquals(rescheduled.id, engine.currentAutomaticRunId(due + 300_000))
+        assertEquals(Kind.IN, requireNotNull(engine.begin(due + 300_000, true)).kind)
     }
     @Test fun changingFailedCheckoutToLaterTodayCreatesANewAutomaticRun() {
         val oldCheckout = at(day, "07:45")

@@ -492,7 +492,7 @@ class Engine(val store: Store, val calendar: WorkCalendar = WorkCalendar.bundled
 
     private fun hasBlockingRun(s: State, kind: Kind, scheduleDate: LocalDate, scheduled: Long): Boolean = s.runs.any { run ->
         !run.manual && run.kind == kind && run.date == scheduleDate &&
-            (run.scheduled == scheduled || !run.status.terminal || run.attempts.isNotEmpty())
+            (run.scheduled == scheduled || !run.status.terminal)
     }
 
     private fun automaticRunId(s: State, kind: Kind, scheduleDate: LocalDate, scheduled: Long): String {
