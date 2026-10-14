@@ -27,7 +27,8 @@ class DingTalkPunchStep(
     data class Prepared(val kind: Kind, val button: VisualPoint)
     data class Preparation(val target: Prepared? = null, val detail: String = "")
     private data class ResultScreen(val statistics: Boolean, val link: VisualPoint?,
-        val successVisible: Boolean, val successTime: LocalTime?, val fallbackLink: VisualPoint)
+        val successVisible: Boolean, val successTime: LocalTime?, val fallbackLink: VisualPoint,
+        val continueDialog: PunchVisualPolicy.ContinuePunchDialog)
 
     /** Wait five seconds, then find the one large blue circle without reading its label. */
     fun prepare(scheduledKind: Kind? = null): Preparation {
@@ -67,6 +68,8 @@ class DingTalkPunchStep(
             var readableScreens = 0
             var resultTaps = 0
             var lastResultTap = 0L
+            var continueTaps = 0
+            var lastContinueTap = 0L
             var screenshotSaved = false
             val submittedAtElapsed = SystemClock.elapsedRealtime()
             while (SystemClock.elapsedRealtime() < deadline) {
@@ -80,11 +83,14 @@ class DingTalkPunchStep(
                         PunchVisualPolicy.successDialogTime(kind, ticket.date, now,
                             System.currentTimeMillis(), screen.bitmap.height, screen.text)
                     }.distinct().singleOrNull()
+                    val continueDialog = PunchVisualPolicy.continuePunchDialog(
+                        screen.bitmap.width, screen.bitmap.height, screen.text)
                     val result = ResultScreen(statistics.acceptHeader(screen.text, screen.bitmap.height),
                         Kind.entries.mapNotNull { kind -> PunchVisualPolicy.resultLink(kind,
                             screen.bitmap.width, screen.bitmap.height, screen.text) }.singleOrNull(),
                         successVisible, receiptTime,
-                        VisualPoint(screen.bitmap.width / 2, (screen.bitmap.height * 0.80f).roundToInt()))
+                        VisualPoint(screen.bitmap.width / 2, (screen.bitmap.height * 0.80f).roundToInt()),
+                        continueDialog)
                     if (result.successVisible && !screenshotSaved)
                         screenshotSaved = app.screenCapture.saveEvidence(ticket.runId, screen.bitmap).ready
                     result
@@ -92,6 +98,24 @@ class DingTalkPunchStep(
                 if (scan.successVisible)
                     return successFromModal(ticket, scan.successTime, now,
                         scan.link ?: scan.fallbackLink)
+                val elapsed = SystemClock.elapsedRealtime()
+                if (!scan.continueDialog.visible && continueTaps < 3 &&
+                    elapsed - lastContinueTap >= 1_000 && navigator.tapContinuePunchDialog()) {
+                    continueTaps++
+                    lastContinueTap = elapsed
+                    continue
+                }
+                if (scan.continueDialog.visible) {
+                    if (continueTaps < 3 && elapsed - lastContinueTap >= 1_000) {
+                        val tapped = navigator.tapContinuePunchDialog() ||
+                            scan.continueDialog.button?.let(navigator::tapDingTalkPoint) == true
+                        if (tapped) {
+                            continueTaps++
+                            lastContinueTap = elapsed
+                        }
+                    }
+                    continue
+                }
                 if (scan.statistics) {
                     return Outcome(Status.STATISTICS_REACHED,
                         "已从成功弹窗的“查看打卡结果”进入今日统计页；打卡记录待下一步核验")

@@ -16,6 +16,26 @@ data class VisualPunchTarget(val kind: Kind, val point: VisualPoint)
 
 /** Page-specific visual checks. Coordinates come from fresh OCR boxes, never a stored tap position. */
 object PunchVisualPolicy {
+    data class ContinuePunchDialog(val visible: Boolean, val button: VisualPoint?)
+
+    /** The organization-change prompt is a confirmation for the submitted punch. */
+    fun continuePunchDialog(width: Int, height: Int, lines: List<VisualText>): ContinuePunchDialog {
+        if (width <= 0 || height <= 0) return ContinuePunchDialog(false, null)
+        val normalized = lines.map { it.copy(text = it.text.replace(Regex("\\s+"), "")) }
+        val body = normalized.sortedWith(compareBy<VisualText> { it.box.centerY }.thenBy { it.box.left })
+            .joinToString("") { it.text }
+        if (!body.contains("当前组织") || !body.contains("继续打卡吗"))
+            return ContinuePunchDialog(false, null)
+        val buttons = normalized.filter { it.text == "继续打卡" &&
+            it.box.centerX > width * 0.58f && it.box.centerY in
+                (height * 0.50f).toInt()..(height * 0.72f).toInt() }
+        val cancel = normalized.any { it.text == "取消" &&
+            it.box.centerX < width * 0.58f && it.box.centerY in
+                (height * 0.50f).toInt()..(height * 0.72f).toInt() }
+        val button = buttons.singleOrNull()?.takeIf { cancel }
+        return ContinuePunchDialog(true, button?.let { VisualPoint(it.box.centerX, it.box.centerY) })
+    }
+
     /** Read the popup only to confirm that a punch succeeded; the schedule determines its type. */
     fun hasSuccessDialog(height: Int, lines: List<VisualText>): Boolean {
         if (height <= 0) return false

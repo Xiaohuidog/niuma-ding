@@ -150,6 +150,23 @@ class DingTalkWorkbenchNavigator : AccessibilityService() {
 
     fun isSystemOverlayVisible(): Boolean = rootInActiveWindow?.packageName?.toString() == "com.android.systemui"
 
+    /** Click only the exact positive button in DingTalk's organization-change confirmation. */
+    fun tapContinuePunchDialog(): Boolean {
+        check(Looper.myLooper() != Looper.getMainLooper()) { "继续打卡确认必须在后台线程执行" }
+        val root = rootInActiveWindow?.takeIf { it.packageName?.toString() == DINGTALK_PACKAGE } ?: return false
+        val screen = Rect().also(root::getBoundsInScreen)
+        if (screen.isEmpty) return false
+        val nodes = mutableListOf<VisibleNode>()
+        collect(root, screen, nodes)
+        val body = nodes.joinToString("") { it.label.replace(Regex("\\s+"), "") }
+        if (!body.contains("当前组织") || !body.contains("继续打卡吗")) return false
+        val buttons = nodes.filter { it.label.replace(Regex("\\s+"), "") == "继续打卡" &&
+            it.centerX > 0.58f && it.centerY in 0.50f..0.72f }
+        val cancel = nodes.any { it.label.replace(Regex("\\s+"), "") == "取消" &&
+            it.centerX < 0.58f && it.centerY in 0.50f..0.72f }
+        return cancel && buttons.size == 1 && click(buttons.single().node)
+    }
+
     /** Blue attendance icon in the first 最近使用 card, confirmed by its section label. */
     private fun mineAttendanceIcon(bitmap: Bitmap, labels: List<EntryLabel>): VisualPoint? {
         val width = bitmap.width
