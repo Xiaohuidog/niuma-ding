@@ -25,8 +25,8 @@ class DingTalkVisualReader(
     var lastFailure: String? = null
         private set
 
-    fun capture(allowSystemOverlay: Boolean = false): Screen? {
-        if (!navigator.isDingTalkVisible() &&
+    fun capture(allowSystemOverlay: Boolean = false, allowKnownTutorial: Boolean = false): Screen? {
+        if (!allowKnownTutorial && !navigator.isDingTalkVisible() &&
             !(allowSystemOverlay && navigator.isSystemOverlayVisible())) {
             lastFailure = "钉钉页面不可见"
             return null

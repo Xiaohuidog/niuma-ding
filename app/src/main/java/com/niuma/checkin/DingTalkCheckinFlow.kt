@@ -32,7 +32,17 @@ class DingTalkCheckinFlow(private val app: CheckinApp) {
             if (!attendance.reached) return failBeforeSubmit(navigator, "打开“我的”考勤打卡失败：${attendance.detail}", ticket)
 
             val punchStep = DingTalkPunchStep(app, navigator)
-            val prepared = punchStep.prepare(automaticTicket?.kind)
+            var prepared = punchStep.prepare(automaticTicket?.kind)
+            if (prepared.target == null && navigator.dismissOneStepWindowTutorial()) {
+                Thread.sleep(400)
+                val resumedWorkbench = navigator.enterWorkbench()
+                if (!resumedWorkbench.reached)
+                    return failBeforeSubmit(navigator, "关闭小窗引导后进入工作台失败：${resumedWorkbench.detail}", ticket)
+                val resumedAttendance = navigator.openMineAttendance()
+                if (!resumedAttendance.reached)
+                    return failBeforeSubmit(navigator, "关闭小窗引导后打开考勤打卡失败：${resumedAttendance.detail}", ticket)
+                prepared = punchStep.prepare(automaticTicket?.kind)
+            }
             val target = prepared.target
                 ?: return failBeforeSubmit(navigator, prepared.detail, ticket)
             if (automaticTicket != null && dateAt(System.currentTimeMillis()) != automaticTicket.date)

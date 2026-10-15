@@ -49,7 +49,9 @@ class DingTalkWorkbenchNavigator : AccessibilityService() {
         var backs = 0
         var tabClicks = 0
         repeat(12) {
-            val root = waitForDingTalkRoot() ?: return Outcome(false, "无法读取钉钉页面")
+            val root = waitForDingTalkRoot() ?: run {
+                if (dismissOneStepWindowTutorial()) waitForDingTalkRoot() else null
+            } ?: return Outcome(false, "无法读取钉钉页面")
             val screen = Rect().also(root::getBoundsInScreen)
             if (screen.height() <= 0) return Outcome(false, "钉钉页面尺寸无效")
             val nodes = mutableListOf<VisibleNode>()
@@ -78,6 +80,7 @@ class DingTalkWorkbenchNavigator : AccessibilityService() {
 
     fun openMineAttendance(): Outcome {
         check(Looper.myLooper() != Looper.getMainLooper()) { "考勤入口导航必须在后台线程执行" }
+        if (dismissOneStepWindowTutorial()) Thread.sleep(400)
         val root = waitForDingTalkRoot() ?: return Outcome(false, "无法读取钉钉工作台")
         val screen = Rect().also(root::getBoundsInScreen)
         if (screen.width() <= 0 || screen.height() <= 0) return Outcome(false, "工作台页面尺寸无效")
@@ -149,6 +152,38 @@ class DingTalkWorkbenchNavigator : AccessibilityService() {
     fun isDingTalkVisible(): Boolean = rootInActiveWindow?.packageName?.toString() == DINGTALK_PACKAGE
 
     fun isSystemOverlayVisible(): Boolean = rootInActiveWindow?.packageName?.toString() == "com.android.systemui"
+
+    /** Dismiss only the illustrated 一步小窗 guide by its exact 下一步 action. */
+    fun dismissOneStepWindowTutorial(): Boolean {
+        check(Looper.myLooper() != Looper.getMainLooper()) { "小窗引导处理必须在后台线程执行" }
+        rootInActiveWindow?.let { root ->
+            val screen = Rect().also(root::getBoundsInScreen)
+            if (!screen.isEmpty) {
+                val nodes = mutableListOf<VisibleNode>()
+                collect(root, screen, nodes)
+                val words = nodes.joinToString("") { it.label.replace(Regex("\\s+"), "") }
+                val guide = words.contains("一步小窗") && words.contains("应用全屏下") &&
+                    words.contains("触发小窗")
+                val buttons = nodes.filter { it.label.replace(Regex("\\s+"), "") == "下一步" &&
+                    it.centerX in 0.25f..0.75f && it.centerY in 0.85f..0.98f }
+                if (guide && buttons.size == 1 && tap(buttons.single().node)) return true
+            }
+        }
+        val app = application as CheckinApp
+        val point = DingTalkVisualReader(app, this).use { reader ->
+            reader.capture(allowKnownTutorial = true)?.use { shot ->
+                val words = shot.text.sortedWith(compareBy<com.niuma.core.VisualText> { it.box.centerY }
+                    .thenBy { it.box.left }).joinToString("") { it.text.replace(Regex("\\s+"), "") }
+                if (!words.contains("一步小窗") || !words.contains("应用全屏下") ||
+                    !words.contains("触发小窗")) return@use null
+                val buttons = shot.text.filter { it.text.replace(Regex("\\s+"), "") == "下一步" &&
+                    it.box.centerX.toFloat() / shot.bitmap.width in 0.25f..0.75f &&
+                    it.box.centerY.toFloat() / shot.bitmap.height in 0.85f..0.98f }
+                buttons.singleOrNull()?.let { VisualPoint(it.box.centerX, it.box.centerY) }
+            }
+        } ?: return false
+        return tapAt(point.x.toFloat(), point.y.toFloat())
+    }
 
     /** Click only the exact positive button in DingTalk's organization-change confirmation. */
     fun tapContinuePunchDialog(): Boolean {
