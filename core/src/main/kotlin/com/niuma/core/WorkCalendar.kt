@@ -16,6 +16,8 @@ class WorkCalendar(private val years: Map<Int, Year>) {
     fun year(year: Int) = years[year]
     fun classify(date: LocalDate): Day {
         val year = years[date.year] ?: return Day.MISSING
+        // The user's schedule never punches on Saturday or Sunday, including official makeup days.
+        if (date.dayOfWeek.value >= 6) return Day.REST
         return when (year.exceptions[date]) {
             true -> Day.MAKEUP
             false -> Day.REST

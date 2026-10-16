@@ -142,15 +142,25 @@ class Engine(val store: Store, val calendar: WorkCalendar = WorkCalendar.bundled
 
     private fun future(plan: Plan, now: Long): Long {
         var date = dateAt(now).minusDays(1)
-        repeat(4) {
+        repeat(370) {
             val boundary = at(date, plan.time)
             val due = if (plan.kind == Kind.IN && date == dateAt(now) &&
                 now >= boundary - AUTOMATIC_WINDOW_MS && now < boundary) boundary
             else randomizedDue(plan, date)
-            if (due > now) return due
+            if (due > now && calendar.classify(date) != Day.REST) return due
             date = date.plusDays(1)
         }
         error("无法生成未来签到时间")
+    }
+
+    private fun nextAllowedDue(plan: Plan, initialDue: Long): Long {
+        var due = initialDue
+        repeat(370) {
+            val date = scheduleDate(plan, due)
+            if (calendar.classify(date) != Day.REST) return due
+            due = randomizedDue(plan, date.plusDays(1))
+        }
+        error("无法生成非休息日签到时间")
     }
 
     private fun cancel(s: State, kind: Kind, now: Long) {
@@ -194,7 +204,7 @@ class Engine(val store: Store, val calendar: WorkCalendar = WorkCalendar.bundled
                 "[牛马签到][需处理] $nextYear 年工作日历缺失", "请更新年度工作日历，缺失年份不会执行签到。截图不可用。"))
         }
         if (!s.settings.paused) s.plans.filter { it.enabled }.forEach { p ->
-            var due = p.nextDue ?: future(p, now)
+            var due = nextAllowedDue(p, p.nextDue ?: future(p, now))
             if (due < s.settings.retentionFloor) due = future(p, s.settings.retentionFloor)
             while (due <= now) {
                 val scheduleDate = scheduleDate(p, due)
@@ -213,7 +223,7 @@ class Engine(val store: Store, val calendar: WorkCalendar = WorkCalendar.bundled
                         !deviceReady -> deferForReadiness(s, r, now, deviceReason)
                     }
                 }
-                due = randomizedDue(p, scheduleDate.plusDays(1))
+                due = nextAllowedDue(p, randomizedDue(p, scheduleDate.plusDays(1)))
             }
             p.nextDue = due
         }
@@ -513,16 +523,18 @@ class Engine(val store: Store, val calendar: WorkCalendar = WorkCalendar.bundled
         }
     }
 
-    fun nextExecution(now: Long): Pair<Long, Kind>? = store.transaction { s ->
-        if (s.settings.paused) return@transaction null
-        s.plans.filter { it.enabled }.mapNotNull { p ->
-            var due = p.nextDue ?: future(p, now)
+    fun nextExecution(now: Long): Pair<Long, Kind>? = store.transaction { s -> nextExecution(s, now) }
+
+    fun nextExecution(s: State, now: Long): Pair<Long, Kind>? {
+        if (s.settings.paused) return null
+        return s.plans.filter { it.enabled }.mapNotNull { p ->
+            var due = nextAllowedDue(p, p.nextDue ?: future(p, now))
             repeat(370) {
                 val scheduleDate = scheduleDate(p, due)
                 if (calendar.classify(scheduleDate) == Day.MISSING) return@mapNotNull null
                 if (due > now && calendar.classify(scheduleDate) != Day.REST &&
                     !hasBlockingRun(s, p.kind, scheduleDate, due)) return@mapNotNull due to p.kind
-                due = randomizedDue(p, scheduleDate.plusDays(1))
+                due = nextAllowedDue(p, randomizedDue(p, scheduleDate.plusDays(1)))
             }
             null
         }.minByOrNull { it.first }
@@ -530,7 +542,9 @@ class Engine(val store: Store, val calendar: WorkCalendar = WorkCalendar.bundled
 
     fun nextWake(now: Long): Long? = store.transaction { s ->
         val candidates = mutableListOf<Long>()
-        if (!s.settings.paused) candidates.addAll(s.plans.filter { it.enabled }.mapNotNull { it.nextDue })
+        if (!s.settings.paused) candidates.addAll(s.plans.filter { it.enabled }.mapNotNull { p ->
+            p.nextDue?.let { nextAllowedDue(p, it) }
+        })
         s.runs.filter { !it.status.terminal }.forEach { r ->
             candidates.add(if (r.status == RunStatus.RUNNING) r.attempts.last().started + policy.timeoutMs else r.nextAttempt ?: r.scheduled)
         }

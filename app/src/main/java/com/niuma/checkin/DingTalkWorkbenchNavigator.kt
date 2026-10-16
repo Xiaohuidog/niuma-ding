@@ -48,15 +48,25 @@ class DingTalkWorkbenchNavigator : AccessibilityService() {
         }
         var backs = 0
         var tabClicks = 0
-        repeat(12) {
+        var unreadablePages = 0
+        var pagesWithoutTabAfterClick = 0
+        repeat(20) {
             val root = waitForDingTalkRoot() ?: run {
                 if (dismissOneStepWindowTutorial()) waitForDingTalkRoot() else null
             }
             if (root == null) {
-                if (tabClicks < 3 && tapBottomWorkbenchFromScreen()) tabClicks++
+                unreadablePages++
+                if (tabClicks < 3 && tapBottomWorkbenchFromScreen()) {
+                    tabClicks++
+                } else if (tabClicks == 0 && unreadablePages >= 2) {
+                    if (backs >= 12 || !performGlobalAction(GLOBAL_ACTION_BACK))
+                        return Outcome(false, "无法返回到底部工作台导航")
+                    backs++
+                }
                 Thread.sleep(500)
                 return@repeat
             }
+            unreadablePages = 0
             val screen = Rect().also(root::getBoundsInScreen)
             if (screen.height() <= 0) {
                 Thread.sleep(500)
@@ -66,35 +76,27 @@ class DingTalkWorkbenchNavigator : AccessibilityService() {
             collect(root, screen, nodes)
             val page = WorkbenchStep.readPage(root.packageName?.toString().orEmpty(),
                 nodes.map { WorkbenchLabel(it.label, it.centerY, it.selected) })
-            // Always enter through the bottom Workbench tab, including when DingTalk opens on Messages.
-            if (tabClicks == 0) {
-                val tab = nodes.firstOrNull { it.label == "工作台" && it.centerY >= 0.78f }
-                if (tab != null && click(tab.node)) {
-                    tabClicks++
+            val tab = nodes.firstOrNull { it.label == "工作台" && it.centerY >= 0.78f }
+            if (tab != null) {
+                pagesWithoutTabAfterClick = 0
+                if (tabClicks > 0 && page.hasWorkbenchTitle && page.workbenchTabSelected &&
+                    page.primaryTabsVisible) return Outcome(true, "已从底部导航进入工作台")
+                if (tabClicks >= 3) return Outcome(false, "点击工作台后未能确认目标页面")
+                if (!click(tab.node) && !tapBottomWorkbenchFromScreen())
+                    return Outcome(false, "底部工作台入口无法点击")
+                tabClicks++
+            } else if (tabClicks == 0 && tapBottomWorkbenchFromScreen()) {
+                // Accessibility may omit the bottom bar; OCR still locates its actual button.
+                tabClicks++
+            } else {
+                // A chat or other deep DingTalk page has no bottom navigation: back out first.
+                if (tabClicks > 0 && ++pagesWithoutTabAfterClick <= 2) {
                     Thread.sleep(500)
                     return@repeat
                 }
-                if (tapBottomWorkbenchFromScreen()) {
-                    tabClicks++
-                    Thread.sleep(500)
-                    return@repeat
-                }
-            }
-            when (WorkbenchStep.decide(page, backs)) {
-                WorkbenchAction.DONE -> if (tabClicks > 0) return Outcome(true, "已从底部导航进入工作台")
-                WorkbenchAction.OPEN_TAB -> {
-                    if (tabClicks >= 3) return Outcome(false, "点击工作台后未能确认目标页面")
-                    val tab = nodes.firstOrNull { it.label == "工作台" && it.centerY >= 0.78f }
-                    if (tab == null || !click(tab.node)) {
-                        if (!tapBottomWorkbenchFromScreen()) return Outcome(false, "未找到可点击的底部工作台入口")
-                    }
-                    tabClicks++
-                }
-                WorkbenchAction.BACK -> {
-                    if (!performGlobalAction(GLOBAL_ACTION_BACK)) return Outcome(false, "无法返回一级页面")
-                    backs++
-                }
-                WorkbenchAction.STOP -> return Outcome(false, "当前页面不属于已识别的钉钉导航路径")
+                if (backs >= 12 || !performGlobalAction(GLOBAL_ACTION_BACK))
+                    return Outcome(false, "无法返回到底部工作台导航")
+                backs++
             }
             Thread.sleep(500)
         }
@@ -141,12 +143,14 @@ class DingTalkWorkbenchNavigator : AccessibilityService() {
         if (index != null) {
             if (!tap(nodes[index].node)) return Outcome(false, "“最近使用”中的“考勤打卡”无法点击")
         } else {
-            // DingTalk renders the Workbench application cards without accessibility text on some devices.
-            // The Workbench shell can appear before its app cards. Re-read 最近使用
-            // while it loads; never substitute an entry elsewhere on the page.
+            // DingTalk's Workbench card is a WebView with no accessible children on P30.
+            // Select the Personal tab on the confirmed Workbench page before reading its first card.
+            tapDingTalkPoint(VisualPoint(
+                screen.left + (screen.width() * 0.10f).toInt(),
+                screen.top + (screen.height() * 0.13f).toInt()))
+            Thread.sleep(500)
             var readableScreens = 0
             var captureFailure: String? = null
-            var personalTapped = false
             val point = DingTalkVisualReader(application as CheckinApp, this).use { reader ->
                 var targetPoint: VisualPoint? = null
                 repeat(8) {
@@ -157,23 +161,17 @@ class DingTalkWorkbenchNavigator : AccessibilityService() {
                     val shot = reader.capture()
                     if (shot == null) captureFailure = reader.lastFailure
                     else readableScreens++
-                    var personalPoint: VisualPoint? = null
                     targetPoint = shot?.use {
                         val labels = shot.text.map { line ->
                             EntryLabel(line.text.replace(Regex("\\s+"), ""),
                                 line.box.centerX.toFloat() / shot.bitmap.width,
                                 line.box.centerY.toFloat() / shot.bitmap.height)
                         }
-                        personalPoint = shot.text.firstOrNull { it.text.replace(Regex("\\s+"), "") == "个人" &&
-                            it.box.centerY < shot.bitmap.height * 0.25f }
-                            ?.let { VisualPoint(it.box.centerX, it.box.centerY) }
                         val target = MineAttendanceEntry.targetIndex(labels, visualOcr = true)
                         target?.let { VisualPoint(shot.text[it].box.centerX, shot.text[it].box.centerY) }
-                            ?: mineAttendanceIcon(shot.bitmap, labels)
+                            ?: mineAttendanceIcon(shot.bitmap)
                     }
                     if (targetPoint != null) return@use targetPoint
-                    if (!personalTapped && personalPoint != null && tapDingTalkPoint(personalPoint!!))
-                        personalTapped = true
                     Thread.sleep(600)
                 }
                 targetPoint
@@ -238,17 +236,14 @@ class DingTalkWorkbenchNavigator : AccessibilityService() {
         return cancel && buttons.size == 1 && click(buttons.single().node)
     }
 
-    /** Blue attendance icon in the first 最近使用 card, confirmed by its section label. */
-    private fun mineAttendanceIcon(bitmap: Bitmap, labels: List<EntryLabel>): VisualPoint? {
+    /** Locate the blue attendance icon in the first Personal card after selecting that tab. */
+    private fun mineAttendanceIcon(bitmap: Bitmap): VisualPoint? {
         val width = bitmap.width
         val height = bitmap.height
-        val recent = labels.singleOrNull { it.text == "最近使用" && it.centerY in 0.16f..0.25f }
-            ?: return null
-        if (labels.none { it.text == "个人" && it.centerY < recent.centerY }) return null
         var count = 0
         var sumX = 0L
         var sumY = 0L
-        for (y in (height * 0.23f).toInt() until (height * 0.31f).toInt() step 4) {
+        for (y in (height * 0.17f).toInt() until (height * 0.33f).toInt() step 4) {
             for (x in (width * 0.07f).toInt() until (width * 0.21f).toInt() step 4) {
                 val color = bitmap.getPixel(x, y)
                 val red = android.graphics.Color.red(color)

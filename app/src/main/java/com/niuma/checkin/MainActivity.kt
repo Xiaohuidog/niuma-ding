@@ -129,7 +129,7 @@ class MainActivity : ComponentActivity() {
     }
     private fun plan(s: State) {
         val b = PagePlanBinding.inflate(layoutInflater, binding.content, true)
-        val next = if (s.automaticEnabled) s.plans.filter { it.enabled }.mapNotNull { it.nextDue }.minOrNull() else null
+        val next = if (s.automaticEnabled) model.app.engine.nextExecution(s, System.currentTimeMillis())?.first else null
         b.nextTime.text = next?.let { stamp(it).take(16) } ?: "—"
         b.inTime.setText(s.plans.first { it.kind == Kind.IN }.time)
         b.outTime.setText(s.plans.first { it.kind == Kind.OUT }.time)

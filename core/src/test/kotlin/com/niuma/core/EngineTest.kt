@@ -167,7 +167,7 @@ class EngineTest {
         val c = engine.calendar
         assertEquals(Day.WORK, c.classify(day))
         assertEquals(Day.REST, c.classify(LocalDate.of(2026, 10, 1)))
-        assertEquals(Day.MAKEUP, c.classify(LocalDate.of(2026, 9, 20)))
+        assertEquals(Day.REST, c.classify(LocalDate.of(2026, 9, 20)))
         assertEquals(Day.REST, c.classify(LocalDate.of(2026, 9, 6)))
         assertEquals(Day.MISSING, c.classify(LocalDate.of(2027, 1, 4)))
         assertEquals(6, c.year(2026)!!.exceptions.values.count { it })
@@ -184,15 +184,15 @@ class EngineTest {
         (1..7).forEach { dayOfMonth ->
             assertEquals(Day.REST, c.classify(LocalDate.of(2026, 10, dayOfMonth)))
         }
-        assertEquals(Day.MAKEUP, c.classify(LocalDate.of(2026, 10, 10)))
+        assertEquals(Day.REST, c.classify(LocalDate.of(2026, 10, 10)))
+        assertEquals(Day.REST, c.classify(LocalDate.of(2026, 10, 17)))
     }
-    @Test fun holidaySkipsAndMakeupRuns() {
-        val holiday = at(LocalDate.of(2026, 10, 1), "07:20")
-        ready(holiday - 1); engine.tick(holiday, true)
-        assertEquals(RunStatus.SKIPPED, run.status); assertTrue(state.alerts.isEmpty())
-        val makeup = at(LocalDate.of(2026, 10, 10), "07:20")
-        engine.tick(makeup, true)
-        assertNotNull(engine.begin(makeup, true))
+    @Test fun holidaysAndWeekendsAreNotScheduled() {
+        val beforeHoliday = at(LocalDate.of(2026, 9, 30), "08:00")
+        ready(beforeHoliday)
+        assertEquals(at(LocalDate.of(2026, 10, 8), "07:20"), engine.nextExecution(beforeHoliday)!!.first)
+        val beforeWeekend = at(LocalDate.of(2026, 10, 16), "18:00")
+        assertEquals(at(LocalDate.of(2026, 10, 19), "07:20"), engine.nextExecution(beforeWeekend)!!.first)
     }
     @Test fun sameDateAndKindRequiredForSuccess() {
         val t = start()
@@ -507,7 +507,7 @@ class EngineTest {
     }
     @Test fun nextExecutionUsesCalendarAndBeijingAndHistory() {
         ready(at(LocalDate.of(2026, 9, 18), "08:00"))
-        assertEquals(at(LocalDate.of(2026, 9, 20), "07:20"), engine.nextExecution(at(LocalDate.of(2026, 9, 18), "08:00"))!!.first)
+        assertEquals(at(LocalDate.of(2026, 9, 21), "07:20"), engine.nextExecution(at(LocalDate.of(2026, 9, 18), "08:00"))!!.first)
     }
     @Test fun calendarReminderDeduplicatesAndMissingYearBlocks() {
         ready(); val december = at(LocalDate.of(2026, 12, 5), "06:00")

@@ -7,10 +7,14 @@ object MineAttendanceEntry {
     fun targetIndex(labels: List<EntryLabel>, visualOcr: Boolean = false): Int? {
         val personal = labels.singleOrNull { it.text == "个人" && it.centerY < 0.25f } ?: return null
         val recent = labels.singleOrNull { it.text == "最近使用" &&
-            it.centerY > personal.centerY && it.centerY < 0.35f } ?: return null
-        val top = recent.centerY
-        val bottom = labels.filter { it.text == "高德打车" && it.centerY > top }
-            .minOfOrNull { it.centerY } ?: 0.39f
+            it.centerY > personal.centerY && it.centerY < 0.35f }
+        // DingTalk can retain the card's scroll position and clip only its header.
+        // In that case the attendance entry is still visible above the next card.
+        val top = recent?.centerY ?: personal.centerY
+        val nextCard = labels.filter { it.text == "高德打车" && it.centerY > top }
+            .minOfOrNull { it.centerY }
+        if (recent == null && nextCard == null) return null
+        val bottom = minOf(nextCard ?: 0.39f, 0.35f)
         val targetNames = if (visualOcr) setOf("考勤打卡", "考勒打卡") else setOf("考勤打卡")
         val targets = labels.withIndex().filter { it.value.text in targetNames &&
             it.value.centerY > top && it.value.centerY < bottom &&
