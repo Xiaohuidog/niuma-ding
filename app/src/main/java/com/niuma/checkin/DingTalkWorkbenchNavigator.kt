@@ -51,20 +51,43 @@ class DingTalkWorkbenchNavigator : AccessibilityService() {
         repeat(12) {
             val root = waitForDingTalkRoot() ?: run {
                 if (dismissOneStepWindowTutorial()) waitForDingTalkRoot() else null
-            } ?: return Outcome(false, "无法读取钉钉页面")
+            }
+            if (root == null) {
+                if (tabClicks < 3 && tapBottomWorkbenchFromScreen()) tabClicks++
+                Thread.sleep(500)
+                return@repeat
+            }
             val screen = Rect().also(root::getBoundsInScreen)
-            if (screen.height() <= 0) return Outcome(false, "钉钉页面尺寸无效")
+            if (screen.height() <= 0) {
+                Thread.sleep(500)
+                return@repeat
+            }
             val nodes = mutableListOf<VisibleNode>()
             collect(root, screen, nodes)
             val page = WorkbenchStep.readPage(root.packageName?.toString().orEmpty(),
                 nodes.map { WorkbenchLabel(it.label, it.centerY, it.selected) })
+            // Always enter through the bottom Workbench tab, including when DingTalk opens on Messages.
+            if (tabClicks == 0) {
+                val tab = nodes.firstOrNull { it.label == "工作台" && it.centerY >= 0.78f }
+                if (tab != null && click(tab.node)) {
+                    tabClicks++
+                    Thread.sleep(500)
+                    return@repeat
+                }
+                if (tapBottomWorkbenchFromScreen()) {
+                    tabClicks++
+                    Thread.sleep(500)
+                    return@repeat
+                }
+            }
             when (WorkbenchStep.decide(page, backs)) {
-                WorkbenchAction.DONE -> return Outcome(true, "已进入工作台")
+                WorkbenchAction.DONE -> if (tabClicks > 0) return Outcome(true, "已从底部导航进入工作台")
                 WorkbenchAction.OPEN_TAB -> {
-                    if (tabClicks >= 2) return Outcome(false, "点击工作台后未能确认目标页面")
+                    if (tabClicks >= 3) return Outcome(false, "点击工作台后未能确认目标页面")
                     val tab = nodes.firstOrNull { it.label == "工作台" && it.centerY >= 0.78f }
-                        ?: return Outcome(false, "未找到底部工作台入口")
-                    if (!click(tab.node)) return Outcome(false, "工作台入口无法点击")
+                    if (tab == null || !click(tab.node)) {
+                        if (!tapBottomWorkbenchFromScreen()) return Outcome(false, "未找到可点击的底部工作台入口")
+                    }
                     tabClicks++
                 }
                 WorkbenchAction.BACK -> {
@@ -75,7 +98,20 @@ class DingTalkWorkbenchNavigator : AccessibilityService() {
             }
             Thread.sleep(500)
         }
-        return Outcome(false, "进入工作台超时")
+        return Outcome(false, "从底部导航进入工作台超时或无法读取钉钉页面")
+    }
+
+    private fun tapBottomWorkbenchFromScreen(): Boolean {
+        val point = DingTalkVisualReader(application as CheckinApp, this).use { reader ->
+            reader.capture(allowKnownTutorial = true)?.use { shot ->
+                shot.text.firstOrNull { line ->
+                    line.text.replace(Regex("\\s+"), "") == "工作台" &&
+                        line.box.centerY.toFloat() / shot.bitmap.height >= 0.78f &&
+                        line.box.centerX.toFloat() / shot.bitmap.width in 0.3f..0.7f
+                }?.let { VisualPoint(it.box.centerX, it.box.centerY) }
+            }
+        } ?: return false
+        return tapAt(point.x.toFloat(), point.y.toFloat())
     }
 
     fun openMineAttendance(): Outcome {
